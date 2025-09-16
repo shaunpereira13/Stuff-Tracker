@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+    <style>
+        .drag-over {
+            border: 2px dashed #3B82F6;
+            background-color: #EFF6FF;
+        }
+        .preview-img {
+            max-width: 200px;
+            max-height: 200px;
+            object-fit: contain;
+        }
+        #qrCodeImage {
+            max-width: 300px;
+            max-height: 300px;
+            width: auto;
+            height: auto;
+        }
+        .stuff-item {
+            border: 1px solid #e5e7eb;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            background-color: #f9fafb;
+        }
+        .stuff-img {
+            max-width: 100px;
+            max-height: 100px;
+            object-fit: contain;
+        }
+        #qrScannerContainer video {
+            max-width: 100%;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+        }
+        #qrScannerCanvas {
+            display: none;
+        }
+        .scanned-item {
+            border: 1px solid #e5e7eb;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            background-color: #f9fafb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">QR Code Generator</h1>
+        
+        <!-- Invoice File Upload -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Invoice (PDF, JPG, PNG)</label>
+            <div 
+                id="invoiceDropZone" 
+                class="border-2 border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition"
+            >
+                <p class="text-gray-500">Drag & drop or click to upload</p>
+                <input 
+                    type="file" 
+                    id="invoiceInput" 
+                    accept=".pdf,.jpg,.jpeg,.png" 
+                    class="hidden"
+                    onchange="handleFileSelect(event, 'invoice')"
+                >
+            </div>
+            <p id="invoiceFileName" class="text-sm text-gray-600 mt-2"></p>
+            <img id="invoicePreview" class="preview-img mt-2 hidden" alt="Invoice Preview">
+        </div>
+
+        <!-- Stuff File Upload -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Stuff (JPG, PNG)</label>
+            <div 
+                id="stuffDropZone" 
+                class="border-2 border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition"
+            >
+                <p class="text-gray-500">Drag & drop or click to upload</p>
+                <input 
+                    type="file" 
+                    id="stuffInput" 
+                    accept=".jpg,.jpeg,.png" 
+                    class="hidden"
+                    onchange="handleFileSelect(event, 'stuff')"
+                >
+            </div>
+            <p id="stuffFileName" class="text-sm text-gray-600 mt-2"></p>
+            <img id="stuffPreview" class="preview-img mt-2 hidden" alt="Stuff Preview">
+        </div>
+
+        <!-- Submit Button -->
+        <button 
+            id="submitButton" 
+            class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400"
+            disabled
+            onclick="event.preventDefault(); uploadFiles()"
+        >
+            Generate QR Code
+        </button>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="mt-4 text-center hidden">
+            <p class="text-gray-600">Generating QR Code...</p>
+        </div>
+
+        <!-- QR Code Display -->
+        <div id="qrCodeContainer" class="mt-6 hidden">
+            <h2 class="text-lg font-semibold text-gray-700 mb-2">Generated QR Code</h2>
+            <img id="qrCodeImage" class="mx-auto" alt="QR Code">
+        </div>
+
+        <!-- Fetch Stuff Button -->
+        <button 
+            id="fetchStuffButton" 
+            class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition mt-4"
+            onclick="event.preventDefault(); fetchStuff()"
+        >
+            View All Stuff
+        </button>
+
+        <!-- Stuff List Display -->
+        <div id="stuffListContainer" class="mt-6 hidden">
+            <h2 class="text-lg font-semibold text-gray-700 mb-2">Uploaded Stuff</h2>
+            <div id="stuffList" class="space-y-2"></div>
+        </div>
+
+        <!-- Loading Indicator for Stuff -->
+        <div id="stuffLoadingIndicator" class="mt-4 text-center hidden">
+            <p class="text-gray-600">Loading Stuff...</p>
+        </div>
+
+        <!-- QR Scanner Button -->
+        <button 
+            id="startScannerButton" 
+            class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition mt-4"
+            onclick="event.preventDefault(); startQRScanner()"
+        >
+            Scan QR Code
+        </button>
+
+        <!-- QR Scanner Container -->
+        <div id="qrScannerContainer" class="mt-6 hidden">
+            <h2 class="text-lg font-semibold text-gray-700 mb-2">Scan QR Code</h2>
+            <video id="qrScannerVideo" autoplay playsinline></video>
+            <canvas id="qrScannerCanvas"></canvas>
+            <button 
+                id="stopScannerButton" 
+                class="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition mt-2"
+                onclick="event.preventDefault(); stopQRScanner()"
+            >
+                Stop QR Scanner
+            </button>
+        </div>
+
+        <!-- Scanned QR Data Display -->
+        <div id="scannedDataContainer" class="mt-6 hidden">
+            <h2 class="text-lg font-semibold text-gray-700 mb-2">Scanned QR Code Data</h2>
+            <div id="scannedData" class="space-y-2"></div>
+        </div>
+
+        <!-- Loading Indicator for Scanned Data -->
+        <div id="scannedLoadingIndicator" class="mt-4 text-center hidden">
+            <p class="text-gray-600">Fetching Scanned Data...</p>
+        </div>
+
+        <!-- Error Message -->
+        <p id="errorMessage" class="text-red-500 text-sm mt-4 hidden"></p>
+    </div>
+
+    <script>
+        let invoiceFile = null;
+        let stuffFile = null;
+        let isUploading = false;
+        let isFetchingStuff = false;
+        let isScanning = false;
+        let videoStream = null;
+
+        // Drag-and-drop event listeners
+        const invoiceDropZone = document.getElementById('invoiceDropZone');
+        const stuffDropZone = document.getElementById('stuffDropZone');
+
+        invoiceDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            invoiceDropZone.classList.add('drag-over');
+        });
+        invoiceDropZone.addEventListener('dragleave', () => {
+            invoiceDropZone.classList.remove('drag-over');
+        });
+        invoiceDropZone.addEventListener('drop', (e) => {
+            invoiceDropZone.classList.remove('drag-over');
+            handleFileDrop(e, 'invoice');
+        });
+        invoiceDropZone.addEventListener('click', () => {
+            document.getElementById('invoiceInput').click();
+        });
+
+        stuffDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            stuffDropZone.classList.add('drag-over');
+        });
+        stuffDropZone.addEventListener('dragleave', () => {
+            stuffDropZone.classList.remove('drag-over');
+        });
+        stuffDropZone.addEventListener('drop', (e) => {
+            stuffDropZone.classList.remove('drag-over');
+            handleFileDrop(e, 'stuff');
+        });
+        stuffDropZone.addEventListener('click', () => {
+            document.getElementById('stuffInput').click();
+        });
+
+        function handleFileDrop(event, type) {
+            event.preventDefault();
+            if (isUploading) {
+                console.log(`Upload in progress, ignoring drop for ${type}`);
+                return;
+            }
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                console.log(`Dropped file for ${type}:`, files[0].name);
+                handleFile(files[0], type);
+            }
+        }
+
+        function handleFileSelect(event, type) {
+            if (isUploading) {
+                console.log(`Upload in progress, ignoring select for ${type}`);
+                return;
+            }
+            const files = event.target.files;
+            if (files.length > 0) {
+                console.log(`Selected file for ${type}:`, files[0].name);
+                handleFile(files[0], type);
+            }
+        }
+
+        function handleFile(file, type) {
+            const fileNameDisplay = document.getElementById(`${type}FileName`);
+            const previewImage = document.getElementById(`${type}Preview`);
+            const validExtensions = type === 'invoice' ? ['pdf', 'jpg', 'jpeg', 'png'] : ['jpg', 'jpeg', 'png'];
+            
+            const extension = file.name.split('.').pop().toLowerCase();
+            if (!validExtensions.includes(extension)) {
+                showError(`Invalid file type for ${type}. Allowed: ${validExtensions.join(', ')}`);
+                return;
+            }
+
+            if (type === 'invoice') {
+                invoiceFile = file;
+            } else {
+                stuffFile = file;
+            }
+
+            fileNameDisplay.textContent = file.name;
+            updateSubmitButton();
+
+            if (extension !== 'pdf') {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    previewImage.src = reader.result;
+                    previewImage.classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            } else {
+                previewImage.classList.add('hidden');
+            }
+        }
+
+        function updateSubmitButton() {
+            const submitButton = document.getElementById('submitButton');
+            submitButton.disabled = !(invoiceFile && stuffFile) || isUploading;
+        }
+
+        function showError(message) {
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            setTimeout(() => errorMessage.classList.add('hidden'), 5000);
+            console.error('Error displayed:', message);
+        }
+
+        async function uploadFiles() {
+            if (isUploading) return;
+            if (!invoiceFile || !stuffFile) {
+                showError('Please upload both files.');
+                return;
+            }
+
+            isUploading = true;
+            const submitButton = document.getElementById('submitButton');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            submitButton.disabled = true;
+            loadingIndicator.classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('invoice_file', invoiceFile);
+            formData.append('stuff_file', stuffFile);
+
+            try {
+                console.log('Initiating fetch request to /upload/invoice');
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    controller.abort();
+                    console.log('Request timed out after 30 seconds');
+                }, 30000);
+
+                const response = await fetch('http://localhost:8000/upload/invoice', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'Accept': 'image/jpeg'
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+                console.log('Fetch response received:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Upload failed');
+                }
+
+                const qrCodeImage = document.getElementById('qrCodeImage');
+                const qrCodeContainer = document.getElementById('qrCodeContainer');
+                
+                if (qrCodeImage.src) {
+                    URL.revokeObjectURL(qrCodeImage.src);
+                }
+
+                const blob = await response.blob();
+                console.log('Blob type:', blob.type);
+                if (blob.type !== 'image/jpeg') {
+                    throw new Error('Unexpected response type: ' + blob.type);
+                }
+
+                qrCodeImage.src = URL.createObjectURL(blob);
+                qrCodeImage.onload = () => {
+                    console.log('QR code image loaded successfully');
+                    qrCodeContainer.classList.remove('hidden');
+                };
+                qrCodeImage.onerror = () => {
+                    console.error('Failed to load QR code image');
+                    showError('Failed to load QR code image.');
+                };
+            } catch (error) {
+                console.error('Fetch error:', error.message);
+                if (error.name === 'AbortError') {
+                    showError('Request timed out. Please try again.');
+                } else {
+                    showError(error.message);
+                }
+            } finally {
+                isUploading = false;
+                submitButton.disabled = false;
+                loadingIndicator.classList.add('hidden');
+                updateSubmitButton();
+            }
+        }
+
+        async function fetchStuff() {
+            if (isFetchingStuff) {
+                console.log('Fetch in progress, ignoring request');
+                return;
+            }
+            isFetchingStuff = true;
+
+            const fetchStuffButton = document.getElementById('fetchStuffButton');
+            const stuffLoadingIndicator = document.getElementById('stuffLoadingIndicator');
+            const stuffListContainer = document.getElementById('stuffListContainer');
+            const stuffList = document.getElementById('stuffList');
+
+            fetchStuffButton.disabled = true;
+            stuffLoadingIndicator.classList.remove('hidden');
+            stuffList.innerHTML = '';
+
+            try {
+                console.log('Fetching stuff from /stuff/all');
+                const response = await fetch('http://localhost:8000/stuff/all', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                console.log('Fetch response received:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || 'Failed to fetch stuff');
+                }
+
+                const stuffData = await response.json();
+                console.log('Stuff data:', stuffData);
+
+                if (stuffData.length === 0) {
+                    stuffList.innerHTML = '<p class="text-gray-600">No stuff uploaded yet.</p>';
+                } else {
+                    stuffData.forEach(item => {
+                        const stuffItem = document.createElement('div');
+                        stuffItem.className = 'stuff-item';
+                        stuffItem.innerHTML = `
+                            <p><strong>ID:</strong> ${item.id}</p>
+                            <p><strong>File Name:</strong> ${item.file_name}</p>
+                        `;
+                        stuffList.appendChild(stuffItem);
+                    });
+                }
+
+                stuffListContainer.classList.remove('hidden');
+            } catch (error) {
+                console.error('Fetch error:', error.message);
+                showError(`Failed to fetch stuff: ${error.message}`);
+            } finally {
+                isFetchingStuff = false;
+                fetchStuffButton.disabled = false;
+                stuffLoadingIndicator.classList.add('hidden');
+            }
+        }
+
+        async function startQRScanner() {
+            if (isScanning) {
+                console.log('Scanner already running');
+                return;
+            }
+            isScanning = true;
+
+            const startScannerButton = document.getElementById('startScannerButton');
+            const qrScannerContainer = document.getElementById('qrScannerContainer');
+            const qrScannerVideo = document.getElementById('qrScannerVideo');
+            const qrScannerCanvas = document.getElementById('qrScannerCanvas');
+            const stopScannerButton = document.getElementById('stopScannerButton');
+
+            startScannerButton.disabled = true;
+            qrScannerContainer.classList.remove('hidden');
+            stopScannerButton.classList.remove('hidden');
+
+            try {
+                console.log('Requesting camera access');
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                console.log('Camera access granted');
+                qrScannerVideo.srcObject = videoStream;
+                qrScannerVideo.play();
+                console.log('Video feed started');
+
+                const canvasContext = qrScannerCanvas.getContext('2d');
+                const scanQR = () => {
+                    if (!isScanning) {
+                        console.log('Scanning stopped');
+                        return;
+                    }
+
+                    if (qrScannerVideo.videoWidth === 0 || qrScannerVideo.videoHeight === 0) {
+                        console.log('Video not ready, retrying...');
+                        requestAnimationFrame(scanQR);
+                        return;
+                    }
+
+                    qrScannerCanvas.width = qrScannerVideo.videoWidth;
+                    qrScannerCanvas.height = qrScannerVideo.videoHeight;
+                    canvasContext.drawImage(qrScannerVideo, 0, 0, qrScannerCanvas.width, qrScannerCanvas.height);
+                    const imageData = canvasContext.getImageData(0, 0, qrScannerCanvas.width, qrScannerCanvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                    if (code) {
+                        console.log('QR code detected:', code.data);
+                        try {
+                            const qrData = JSON.parse(code.data);
+                            console.log('Parsed QR data:', qrData);
+                            if (qrData.stuff_id) {
+                                fetchScannedData(qrData.stuff_id);
+                                stopQRScanner();
+                            } else {
+                                showError('Invalid QR code data: No stuff_id found');
+                                requestAnimationFrame(scanQR);
+                            }
+                        } catch (e) {
+                            showError('Invalid QR code data format');
+                            console.error('Parsing error:', e.message);
+                            requestAnimationFrame(scanQR);
+                        }
+                    } else {
+                        console.log('No QR code detected, scanning again...');
+                        requestAnimationFrame(scanQR);
+                    }
+                };
+
+                console.log('Starting QR code scanning loop');
+                requestAnimationFrame(scanQR);
+            } catch (error) {
+                showError('Failed to access camera: ' + error.message);
+                console.error('Camera error:', error);
+                stopQRScanner();
+            }
+        }
+
+        function stopQRScanner() {
+            if (!isScanning) {
+                console.log('Scanner not running');
+                return;
+            }
+            isScanning = false;
+
+            const startScannerButton = document.getElementById('startScannerButton');
+            const qrScannerContainer = document.getElementById('qrScannerContainer');
+            const stopScannerButton = document.getElementById('stopScannerButton');
+
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+                console.log('Camera stream stopped');
+            }
+
+            qrScannerContainer.classList.add('hidden');
+            stopScannerButton.classList.add('hidden');
+            startScannerButton.disabled = false;
+            console.log('QR scanner UI reset');
+        }
+
+        async function fetchScannedData(stuffId) {
+            const scannedLoadingIndicator = document.getElementById('scannedLoadingIndicator');
+            const scannedDataContainer = document.getElementById('scannedDataContainer');
+            const scannedData = document.getElementById('scannedData');
+
+            scannedLoadingIndicator.classList.remove('hidden');
+            scannedData.innerHTML = '';
+
+            try {
+                console.log('Fetching scanned data for stuff_id:', stuffId);
+                const response = await fetch(`http://localhost:8000/stuff?qr_data_id=${stuffId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                console.log('Fetch response received:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || 'Failed to fetch scanned data');
+                }
+
+                const data = await response.json();
+                console.log('Scanned data:', data);
+
+                const scannedItem = document.createElement('div');
+                scannedItem.className = 'scanned-item';
+                scannedItem.innerHTML = `
+                    <p><strong>Stuff Image:</strong></p>
+                    <img src="${data.stuff}" alt="Stuff Image" class="stuff-img">
+                    ${data.invoice_image ? `
+                        <p><strong>Invoice Image:</strong></p>
+                        <img src="${data.invoice_image}" alt="Invoice Image" class="stuff-img">
+                    ` : `
+                        <p><strong>Invoice PDF:</strong></p>
+                        <a href="${data.invoice_pdf}" download="invoice.pdf" class="text-blue-600 hover:underline">Download PDF</a>
+                    `}
+                `;
+                scannedData.appendChild(scannedItem);
+                scannedDataContainer.classList.remove('hidden');
+            } catch (error) {
+                console.error('Fetch error:', error.message);
+                showError(`Failed to fetch scanned data: ${error.message}`);
+            } finally {
+                scannedLoadingIndicator.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
